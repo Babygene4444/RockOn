@@ -1,377 +1,262 @@
 /* =======================================================
-   RockOn — app.js
-   Camera management + Gemini Vision API rock identification
+   RockOn v2 — app.js
+   Uses gemini-3.8-flash · No service worker (avoids cache issues)
    ======================================================= */
-
 'use strict';
+
+// ── Config ─────────────────────────────────────────────
+const GEMINI_MODEL = 'gemini-3.8-flash';
 
 // ── State ──────────────────────────────────────────────
 const state = {
-    currentScreen: 'welcome',
     stream: null,
     capturedDataUrl: null,
     apiKey: localStorage.getItem('rockon_api_key') || ''
 };
 
-// ── Gemini model to use ────────────────────────────────
-const GEMINI_MODEL = 'gemini-2.5-flash';
-
-// ── Screen navigation ──────────────────────────────────
+// ── Screens ────────────────────────────────────────────
 function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    state.currentScreen = id;
 }
 
 // ── Toast ──────────────────────────────────────────────
 let toastTimer;
-function showToast(msg, duration = 3000) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
+function toast(msg, ms = 3200) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), duration);
+    toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ── Camera ─────────────────────────────────────────────
 async function startCamera() {
+    if (state.stream) state.stream.getTracks().forEach(t => t.stop());
     try {
-        // Stop any existing stream
-        if (state.stream) {
-            state.stream.getTracks().forEach(t => t.stop());
-        }
-        const constraints = {
-            video: {
-                facingMode: { ideal: 'environment' }, // rear camera on iPhone
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
-            },
+        state.stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
             audio: false
-        };
-        state.stream = await navigator.mediaDevices.getUserMedia(constraints);
-        const video = document.getElementById('video-feed');
-        video.srcObject = state.stream;
-        await video.play();
+        });
+        const v = document.getElementById('video-feed');
+        v.srcObject = state.stream;
+        await v.play();
         showScreen('scanner-screen');
-    } catch (err) {
-        console.error('Camera error:', err);
-        if (err.name === 'NotAllowedError') {
-            showToast('📷 Camera permission denied — please allow access in Settings');
+    } catch (e) {
+        if (e.name === 'NotAllowedError') {
+            toast('📷 Camera permission denied — allow access in iPhone Settings');
         } else {
-            showToast('📷 Could not access camera: ' + err.message);
+            toast('📷 Camera unavailable: ' + e.message);
         }
     }
 }
 
 function stopCamera() {
-    if (state.stream) {
-        state.stream.getTracks().forEach(t => t.stop());
-        state.stream = null;
-    }
+    if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
 }
 
-// ── Capture photo ──────────────────────────────────────
+// ── Capture ────────────────────────────────────────────
 function capturePhoto() {
-    const video = document.getElementById('video-feed');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // JPEG at 90% quality keeps file size reasonable for the API
-    state.capturedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+    const v = document.getElementById('video-feed');
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth || 1280; c.height = v.videoHeight || 720;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    state.capturedDataUrl = c.toDataURL('image/jpeg', 0.9);
     return state.capturedDataUrl;
 }
 
-// ── Gemini Vision API call ─────────────────────────────
-async function identifyRock(base64Data) {
+// ── Gemini API ─────────────────────────────────────────
+async function identifyRock(dataUrl) {
     const key = state.apiKey.trim();
-    if (!key) {
-        throw new Error('NO_KEY');
-    }
+    if (!key) throw new Error('NO_KEY');
 
-    // Strip the data URL prefix to get pure base64
-    const base64 = base64Data.split(',')[1];
+    const base64 = dataUrl.split(',')[1];
 
-    const prompt = `You are a professional geologist and mineralogist. Examine this image carefully.
+    const prompt = `You are a professional geologist and mineralogist. Analyse this image carefully.
 
-Identify the rock or mineral specimen shown and respond ONLY with a valid JSON object using exactly this structure:
+Identify the rock, stone, or mineral shown, then respond ONLY with a valid JSON object in exactly this structure:
 
 {
-  "name": "Common name of the rock/stone/mineral",
-  "scientific_name": "Scientific or formal geological name",
+  "name": "Common name",
+  "scientific_name": "Formal geological/mineralogical name",
   "type": "Igneous | Sedimentary | Metamorphic | Mineral | Gemstone | Other",
-  "confidence": 85,
-  "description": "2-3 sentence description of what this rock is and how it forms.",
-  "hardness": "Mohs hardness value or range, e.g. 6-7",
-  "color_luster": "Brief description of its typical color and luster",
-  "common_uses": "How this rock or mineral is commonly used",
+  "confidence": 82,
+  "description": "2–3 sentence description of what this rock is and how it forms.",
+  "hardness": "Mohs scale value or range",
+  "color_luster": "Typical colour and luster description",
+  "common_uses": "Common uses of this rock or mineral",
+  "found_in": "Typical geographic regions or geological environments",
   "fun_facts": [
-    "Interesting fact one about this rock",
-    "Interesting fact two about this rock",
-    "Interesting fact three about this rock"
+    "Interesting fact 1",
+    "Interesting fact 2",
+    "Interesting fact 3"
   ],
-  "found_in": "Geographic regions or environments where this rock is typically found",
   "not_a_rock": false
 }
 
-If the image does NOT clearly show a rock, stone, mineral, or geological specimen, set "not_a_rock" to true and fill "name" with a brief explanation.
+If the image does NOT show a rock, stone, or mineral, set "not_a_rock": true and put a short explanation in "name".
 
-Respond with ONLY the JSON. No markdown, no code fences, no extra text.`;
+Respond with ONLY the raw JSON — no markdown fences, no extra text.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
-
-    const body = {
-        contents: [{
-            parts: [
-                {
-                    inline_data: {
-                        mime_type: 'image/jpeg',
-                        data: base64
-                    }
-                },
-                { text: prompt }
-            ]
-        }],
-        generationConfig: {
-            temperature: 0.2,
-            topP: 0.8,
-            maxOutputTokens: 1024
+    const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+                        { text: prompt }
+                    ]
+                }],
+                generationConfig: { temperature: 0.2, topP: 0.8, maxOutputTokens: 1024 }
+            })
         }
-    };
+    );
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        const msg = errJson?.error?.message || `HTTP ${response.status}`;
-        throw new Error(msg);
+    if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message || `API error ${res.status}`);
     }
 
-    const data = await response.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const data = await res.json();
+    const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '')
+        .replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
-    // Extract JSON — strip any accidental markdown fences
-    const cleaned = rawText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    try {
-        return JSON.parse(cleaned);
-    } catch {
-        throw new Error('Could not parse AI response. Please try again.');
-    }
+    try { return JSON.parse(raw); }
+    catch { throw new Error('Could not read AI response — please try again.'); }
 }
 
 // ── Render results ─────────────────────────────────────
-function renderResults(rock, photoUrl) {
-    // Photo
-    const photoEl = document.getElementById('result-photo');
-    photoEl.src = photoUrl;
+function h(str) {
+    return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const typeEmoji = { Igneous: '🌋', Sedimentary: '🏜️', Metamorphic: '♻️', Mineral: '💎', Gemstone: '💠', Other: '🪨' };
+
+function renderResults(rock, photo) {
+    document.getElementById('result-photo').src = photo;
+    const body = document.getElementById('results-body');
 
     if (rock.not_a_rock) {
-        document.getElementById('results-body').innerHTML = `
-      <div class="error-card">
-        <div class="error-icon">🪨</div>
-        <p>${escHtml(rock.name || 'No rock detected in the image.')}</p>
-        <p style="margin-top:8px; color: var(--text-muted); font-size:0.8rem;">Try pointing the camera directly at a rock or stone surface.</p>
+        body.innerHTML = `
+      <div class="err-card">
+        <div class="err-icon">🪨</div>
+        <p>${h(rock.name || 'No rock detected.')}</p>
+        <p style="margin-top:8px;color:var(--muted);font-size:.78rem;">Point the camera directly at a rock or stone and try again.</p>
       </div>`;
         return;
     }
 
-    const confidence = Math.min(100, Math.max(0, rock.confidence || 75));
-    const factsHtml = (rock.fun_facts || []).map(f =>
-        `<div class="fun-fact-item">${escHtml(f)}</div>`
-    ).join('');
+    const conf = Math.min(100, Math.max(0, rock.confidence || 75));
+    const facts = (rock.fun_facts || []).map(f => `<div class="fact-item">${h(f)}</div>`).join('');
 
-    document.getElementById('results-body').innerHTML = `
-    <div class="rock-name-card">
-      <div class="rock-name-label">Identified Rock / Mineral</div>
-      <div class="rock-name-value">${escHtml(rock.name || 'Unknown')}</div>
-      ${rock.scientific_name ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;font-style:italic;">${escHtml(rock.scientific_name)}</div>` : ''}
-      <span class="rock-type-badge">${typeEmoji(rock.type)} ${escHtml(rock.type || 'Unknown')}</span>
-      <div class="confidence-bar-wrap">
-        <div class="confidence-bar-bg">
-          <div class="confidence-bar-fill" id="conf-fill" style="width:0%"></div>
-        </div>
-        <span class="confidence-label">${confidence}% match</span>
+    body.innerHTML = `
+    <div class="rock-hero">
+      <div class="label-tag">Identified Rock / Mineral</div>
+      <div class="rock-name">${h(rock.name || 'Unknown')}</div>
+      ${rock.scientific_name ? `<div class="sci-name">${h(rock.scientific_name)}</div>` : ''}
+      <span class="type-badge">${typeEmoji[rock.type] || '🪨'} ${h(rock.type || 'Unknown')}</span>
+      <div class="conf-wrap">
+        <div class="conf-bg"><div class="conf-fill" id="cf" style="width:0%"></div></div>
+        <span class="conf-pct">${conf}% match</span>
       </div>
     </div>
 
     <div class="info-card">
-      <div class="info-card-label">📖 Description</div>
-      <div class="info-card-text">${escHtml(rock.description || '—')}</div>
+      <div class="info-label">📖 Description</div>
+      <div class="info-text">${h(rock.description || '—')}</div>
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-icon">💎</div>
-        <div class="stat-label">Hardness</div>
-        <div class="stat-value">${escHtml(rock.hardness || '—')}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">✨</div>
-        <div class="stat-label">Color / Luster</div>
-        <div class="stat-value" style="font-size:0.8rem">${escHtml(rock.color_luster || '—')}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🏔️</div>
-        <div class="stat-label">Found In</div>
-        <div class="stat-value" style="font-size:0.78rem">${escHtml(rock.found_in || '—')}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🔧</div>
-        <div class="stat-label">Common Uses</div>
-        <div class="stat-value" style="font-size:0.78rem">${escHtml(rock.common_uses || '—')}</div>
-      </div>
+      <div class="stat-card"><div class="stat-icon">💎</div><div class="stat-lbl">Hardness</div><div class="stat-val">${h(rock.hardness || '—')}</div></div>
+      <div class="stat-card"><div class="stat-icon">✨</div><div class="stat-lbl">Color / Luster</div><div class="stat-val" style="font-size:.78rem">${h(rock.color_luster || '—')}</div></div>
+      <div class="stat-card"><div class="stat-icon">🏔️</div><div class="stat-lbl">Found In</div><div class="stat-val" style="font-size:.76rem">${h(rock.found_in || '—')}</div></div>
+      <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-lbl">Common Uses</div><div class="stat-val" style="font-size:.76rem">${h(rock.common_uses || '—')}</div></div>
     </div>
 
-    ${factsHtml ? `
-    <div class="info-card">
-      <div class="info-card-label">⚡ Fun Facts</div>
-      <div class="fun-facts-list">${factsHtml}</div>
-    </div>` : ''}
+    ${facts ? `<div class="info-card"><div class="info-label">⚡ Fun Facts</div><div style="display:flex;flex-direction:column;gap:9px;margin-top:4px">${facts}</div></div>` : ''}
   `;
 
-    // Animate confidence bar after layout
-    requestAnimationFrame(() => {
-        setTimeout(() => {
-            const fill = document.getElementById('conf-fill');
-            if (fill) fill.style.width = confidence + '%';
-        }, 80);
-    });
-}
-
-function typeEmoji(type) {
-    const map = {
-        'Igneous': '🌋', 'Sedimentary': '🏜️', 'Metamorphic': '♻️',
-        'Mineral': '💎', 'Gemstone': '💠', 'Other': '🪨'
-    };
-    return map[type] || '🪨';
-}
-
-function escHtml(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    requestAnimationFrame(() => setTimeout(() => {
+        const cf = document.getElementById('cf');
+        if (cf) cf.style.width = conf + '%';
+    }, 60));
 }
 
 // ── Event wiring ───────────────────────────────────────
-function initEvents() {
-    // Welcome → Settings (gear icon)
-    document.getElementById('btn-settings-from-welcome').addEventListener('click', () => {
-        showScreen('settings-screen');
-    });
+document.addEventListener('DOMContentLoaded', () => {
+    // Pre-fill API key
+    const keyInput = document.getElementById('api-key-input');
+    if (state.apiKey) keyInput.value = state.apiKey;
 
-    // Welcome → scan
+    // Welcome → Settings
+    document.getElementById('btn-welcome-settings').addEventListener('click', () => showScreen('settings-screen'));
+
+    // Welcome → Scan
     document.getElementById('btn-start-scan').addEventListener('click', async () => {
         if (!state.apiKey.trim()) {
-            showToast('⚙️ Please add your Gemini API key in Settings first');
+            toast('⚙️ Add your Gemini API key in Settings first');
             showScreen('settings-screen');
             return;
         }
         await startCamera();
     });
 
-    // Scanner back button
-    document.getElementById('btn-scanner-back').addEventListener('click', () => {
-        stopCamera();
-        showScreen('welcome-screen');
-    });
+    // Scanner back
+    document.getElementById('btn-scanner-back').addEventListener('click', () => { stopCamera(); showScreen('welcome-screen'); });
 
     // Scanner settings
-    document.getElementById('btn-scanner-settings').addEventListener('click', () => {
-        stopCamera();
-        showScreen('settings-screen');
-    });
+    document.getElementById('btn-scanner-settings').addEventListener('click', () => { stopCamera(); showScreen('settings-screen'); });
 
-    // Capture button
+    // Capture
     document.getElementById('btn-capture').addEventListener('click', async () => {
-        const photoUrl = capturePhoto();
+        const photo = capturePhoto();
         stopCamera();
-
-        // Show loading
-        const loadingPreview = document.getElementById('loading-preview');
-        loadingPreview.src = photoUrl;
+        document.getElementById('loading-preview').src = photo;
+        document.getElementById('result-photo').src = photo;
         showScreen('loading-screen');
-
-        // Set result photo eagerly
-        document.getElementById('result-photo').src = photoUrl;
-
         try {
-            const rock = await identifyRock(photoUrl);
-            renderResults(rock, photoUrl);
+            const rock = await identifyRock(photo);
+            renderResults(rock, photo);
             showScreen('results-screen');
-        } catch (err) {
-            if (err.message === 'NO_KEY') {
-                showToast('⚙️ Please add your Gemini API key in Settings');
+        } catch (e) {
+            if (e.message === 'NO_KEY') {
+                toast('⚙️ Add your Gemini API key in Settings');
                 showScreen('settings-screen');
             } else {
-                // Show error in results screen
                 document.getElementById('results-body').innerHTML = `
-          <div class="error-card">
-            <div class="error-icon">⚠️</div>
-            <p>${escHtml(err.message)}</p>
+          <div class="err-card">
+            <div class="err-icon">⚠️</div>
+            <p>${h(e.message)}</p>
           </div>`;
                 showScreen('results-screen');
             }
         }
     });
 
-    // Results → rescan
-    document.getElementById('btn-rescan').addEventListener('click', async () => {
-        await startCamera();
-    });
+    // Results back
+    document.getElementById('btn-results-back').addEventListener('click', () => showScreen('welcome-screen'));
 
-    // Results → back to welcome
-    document.getElementById('btn-results-back').addEventListener('click', () => {
-        showScreen('welcome-screen');
-    });
+    // Rescan
+    document.getElementById('btn-rescan').addEventListener('click', async () => await startCamera());
 
     // Settings back
-    document.getElementById('btn-settings-back').addEventListener('click', () => {
-        showScreen('welcome-screen');
-    });
+    document.getElementById('btn-settings-back').addEventListener('click', () => showScreen('welcome-screen'));
 
     // Save API key
     document.getElementById('btn-save-key').addEventListener('click', () => {
-        const input = document.getElementById('api-key-input').value.trim();
-        const notice = document.getElementById('save-notice');
-        if (!input) {
-            notice.textContent = '⚠️ Please enter an API key';
-            notice.className = 'save-notice error';
-            return;
-        }
-        localStorage.setItem('rockon_api_key', input);
-        state.apiKey = input;
-        notice.textContent = '✓ API key saved successfully!';
-        notice.className = 'save-notice success';
-        setTimeout(() => { notice.textContent = ''; }, 3000);
+        const val = keyInput.value.trim();
+        const note = document.getElementById('save-note');
+        if (!val) { note.textContent = '⚠️ Please enter a key'; note.className = 'save-note err'; return; }
+        localStorage.setItem('rockon_api_key', val);
+        state.apiKey = val;
+        note.textContent = '✓ Saved!'; note.className = 'save-note ok';
+        setTimeout(() => { note.textContent = ''; note.className = 'save-note'; }, 2500);
     });
 
-    // Pre-fill API key input from storage
-    const savedKey = localStorage.getItem('rockon_api_key') || '';
-    if (savedKey) {
-        document.getElementById('api-key-input').value = savedKey;
-    }
-}
-
-// ── Service Worker registration ────────────────────────
-function registerSW() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js').catch(() => {
-            // SW optional — app works without it
-        });
-    }
-}
-
-// ── Boot ───────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    initEvents();
-    registerSW();
     showScreen('welcome-screen');
 });

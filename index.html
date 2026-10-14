@@ -1,204 +1,134 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0d12" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="RockOn" />
-  <meta name="description" content="Point your camera at any rock or stone and instantly identify it with AI-powered geology." />
-
-  <title>RockOn — Rock Identifier</title>
-
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="./manifest.json" />
-
-  <!-- Apple Touch Icon -->
-  <link rel="apple-touch-icon" href="./icon-192.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
-
-  <link rel="stylesheet" href="./style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0d12" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RockOn" />
+    <meta name="description" content="Scan any rock or stone and instantly identify it with AI." />
+    <title>RockOn — Rock Identifier</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <link rel="stylesheet" href="./style.css" />
 </head>
+
 <body>
-<div id="app">
+    <div id="app">
 
-  <!-- ═══════════════════════════════════════════
-       WELCOME SCREEN
-  ═══════════════════════════════════════════ -->
-  <section class="screen" id="welcome-screen">
-    <img src="./icon-192.png" alt="RockOn logo" class="welcome-logo" id="welcome-logo" />
-
-    <span class="pill-badge">AI-Powered Geology</span>
-
-    <h1 class="welcome-title">Identify Any<br/>Rock Instantly</h1>
-    <p class="welcome-subtitle">
-      Point your camera at a rock, stone, or mineral.<br/>
-      Our AI geologist tells you exactly what it is.
-    </p>
-
-    <button class="btn-primary" id="btn-start-scan">
-      📷 &nbsp;Scan a Rock
-    </button>
-
-    <button class="btn-secondary" id="btn-settings-from-welcome" style="margin-top:16px;">
-      ⚙️ &nbsp;Settings &amp; API Key
-    </button>
-  </section>
+        <!-- ═══════════ WELCOME ═══════════ -->
+        <section class="screen" id="welcome-screen">
+            <img src="./icon-192.png" alt="RockOn" class="welcome-logo" />
+            <span class="pill">AI-Powered Geology</span>
+            <h1 class="welcome-title">Identify Any<br />Rock Instantly</h1>
+            <p class="welcome-sub">Point your camera at any rock, stone, or mineral.<br />Our AI geologist tells you
+                exactly what it is.</p>
+            <button class="btn-primary" id="btn-start-scan">📷&nbsp;&nbsp;Scan a Rock</button>
+            <button class="btn-ghost" id="btn-welcome-settings">⚙️&nbsp;&nbsp;Settings &amp; API Key</button>
+        </section>
 
 
-  <!-- ═══════════════════════════════════════════
-       SCANNER SCREEN
-  ═══════════════════════════════════════════ -->
-  <section class="screen" id="scanner-screen">
+        <!-- ═══════════ SCANNER ═══════════ -->
+        <section class="screen" id="scanner-screen">
+            <video id="video-feed" playsinline muted autoplay></video>
 
-    <!-- Live camera feed -->
-    <video id="video-feed" playsinline muted autoplay></video>
+            <div class="scanner-header">
+                <button class="btn-icon" id="btn-scanner-back" aria-label="Back">←</button>
+                <span class="scanner-label">Rock Scanner</span>
+                <button class="btn-icon" id="btn-scanner-settings" aria-label="Settings">⚙️</button>
+            </div>
 
-    <!-- Header overlay -->
-    <div class="scanner-header">
-      <button class="btn-icon" id="btn-scanner-back" aria-label="Go back">←</button>
-      <span class="scanner-title">Rock Scanner</span>
-      <button class="btn-icon" id="btn-scanner-settings" aria-label="Settings">⚙️</button>
+            <div class="vf-wrap">
+                <div class="vf-box">
+                    <div class="vf-scan"></div>
+                    <div class="vf-bl"></div>
+                    <div class="vf-br"></div>
+                    <div class="vf-hint">Centre the rock in the frame</div>
+                </div>
+            </div>
+
+            <div class="scanner-footer">
+                <div style="width:46px"></div>
+                <button class="capture-btn" id="btn-capture" aria-label="Capture">
+                    <div class="capture-pulse"></div>
+                    <div class="capture-inner"></div>
+                </button>
+                <div style="width:46px"></div>
+            </div>
+        </section>
+
+
+        <!-- ═══════════ LOADING ═══════════ -->
+        <section class="screen" id="loading-screen">
+            <img id="loading-preview" src="" alt="Captured" class="loading-preview" />
+            <div class="spin" aria-hidden="true">🔮</div>
+            <p class="loading-msg">Consulting the AI geologist…</p>
+            <div class="dots" aria-label="Loading"><span>●</span><span>●</span><span>●</span></div>
+        </section>
+
+
+        <!-- ═══════════ RESULTS ═══════════ -->
+        <section class="screen" id="results-screen">
+            <div class="results-header">
+                <button class="btn-icon" id="btn-results-back" aria-label="Back">←</button>
+                <span class="results-title">Analysis Complete</span>
+                <div style="width:46px"></div>
+            </div>
+
+            <img id="result-photo" src="" alt="Rock" class="result-photo" />
+
+            <div class="results-body" id="results-body"></div>
+
+            <div class="rescan-wrap">
+                <button class="btn-primary" id="btn-rescan">📷&nbsp;&nbsp;Scan Another Rock</button>
+            </div>
+        </section>
+
+
+        <!-- ═══════════ SETTINGS ═══════════ -->
+        <section class="screen" id="settings-screen">
+            <div class="settings-hdr">
+                <button class="btn-icon" id="btn-settings-back" aria-label="Back">←</button>
+                <h2>Settings</h2>
+            </div>
+
+            <div class="sec-label">Gemini API Key</div>
+            <div class="settings-card">
+                <p>RockOn uses <strong style="color:var(--amber)">Google Gemini AI</strong> to identify rocks. You need
+                    a free API key.</p>
+                <p>Get yours at <a href="https://aistudio.google.com/app/apikey" target="_blank"
+                        rel="noopener">aistudio.google.com</a> — free with generous daily limits.</p>
+                <input class="api-input" id="api-key-input" type="password" placeholder="Paste your API key here…"
+                    autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+                <div class="save-note" id="save-note"></div>
+            </div>
+
+            <button class="btn-primary" id="btn-save-key" style="max-width:100%;margin-bottom:20px;">
+                💾&nbsp;&nbsp;Save API Key
+            </button>
+
+            <div class="sec-label">About</div>
+            <div class="settings-card">
+                <p><strong style="color:var(--text)">RockOn v2.0</strong> — AI rock &amp; mineral
+                    identification.<br />Your API key is stored only on this device.</p>
+            </div>
+
+            <div class="sec-label" style="margin-top:4px">Install on iPhone</div>
+            <div class="settings-card">
+                <p>In Safari, tap the <strong style="color:var(--amber)">Share ↑</strong> button then <strong
+                        style="color:var(--amber)">"Add to Home Screen"</strong> to install RockOn as a standalone app.
+                </p>
+            </div>
+        </section>
+
+
+        <div class="toast" id="toast" role="alert" aria-live="polite"></div>
     </div>
 
-    <!-- Viewfinder overlay -->
-    <div class="viewfinder-overlay">
-      <div class="viewfinder-box">
-        <div class="scan-line"></div>
-        <div class="vf-corner-bl"></div>
-        <div class="vf-corner-br"></div>
-        <div class="vf-hint">Centre the rock within the frame</div>
-      </div>
-    </div>
-
-    <!-- Footer with capture button -->
-    <div class="scanner-footer">
-      <div style="width:48px"></div><!-- spacer -->
-      <button class="capture-btn" id="btn-capture" aria-label="Capture photo">
-        <div class="capture-pulse"></div>
-        <div class="capture-btn-inner"></div>
-      </button>
-      <div style="width:48px"></div><!-- spacer -->
-    </div>
-
-  </section>
-
-
-  <!-- ═══════════════════════════════════════════
-       LOADING SCREEN
-  ═══════════════════════════════════════════ -->
-  <section class="screen" id="loading-screen">
-    <img id="loading-preview" src="" alt="Captured photo" class="loading-image-preview" />
-    <div class="loading-crystal" aria-hidden="true">🔮</div>
-    <p class="loading-text">Consulting the AI geologist…</p>
-    <div class="loading-dots" aria-label="Loading">
-      <span>●</span><span>●</span><span>●</span>
-    </div>
-  </section>
-
-
-  <!-- ═══════════════════════════════════════════
-       RESULTS SCREEN
-  ═══════════════════════════════════════════ -->
-  <section class="screen" id="results-screen">
-
-    <div class="results-header">
-      <button class="btn-icon" id="btn-results-back" aria-label="Back to home">←</button>
-      <span class="results-header-title">Analysis Complete</span>
-      <div style="width:48px"></div>
-    </div>
-
-    <img id="result-photo" src="" alt="Captured rock" class="result-photo" />
-
-    <div class="results-body" id="results-body">
-      <!-- Populated by app.js -->
-    </div>
-
-    <div class="rescan-btn-wrap">
-      <button class="btn-primary" id="btn-rescan">
-        📷 &nbsp;Scan Another Rock
-      </button>
-    </div>
-
-  </section>
-
-
-  <!-- ═══════════════════════════════════════════
-       SETTINGS SCREEN
-  ═══════════════════════════════════════════ -->
-  <section class="screen" id="settings-screen">
-
-    <div class="settings-header">
-      <button class="btn-icon" id="btn-settings-back" aria-label="Back">←</button>
-      <h2 class="settings-title">Settings</h2>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-label">Gemini API Key</div>
-      <div class="settings-card">
-        <p>
-          RockOn uses <strong style="color:var(--amber)">Google Gemini Vision AI</strong> 
-          to identify rocks. You need a free API key to use the app.
-        </p>
-        <p>
-          Get yours at 
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
-            aistudio.google.com
-          </a> 
-          — it's free with generous limits.
-        </p>
-        <div class="api-input-wrap">
-          <input
-            class="api-input"
-            id="api-key-input"
-            type="password"
-            placeholder="Paste your API key here…"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="none"
-            spellcheck="false"
-          />
-        </div>
-        <div id="save-notice" class="save-notice"></div>
-      </div>
-    </div>
-
-    <button class="btn-primary" id="btn-save-key" style="max-width:100%;margin-bottom:12px;">
-      💾 &nbsp;Save API Key
-    </button>
-
-    <div class="settings-section" style="margin-top:8px;">
-      <div class="settings-section-label">About</div>
-      <div class="settings-card" style="gap:0">
-        <p>
-          <strong style="color:var(--text-primary)">RockOn v1.0</strong><br/>
-          AI-powered rock &amp; mineral identification. 
-          Your API key is stored only on this device and never sent to anyone but Google.
-        </p>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-label">Deploy to iPhone</div>
-      <div class="settings-card">
-        <p>
-          Open this page in <strong style="color:var(--text-primary)">iPhone Safari</strong>, 
-          tap the <strong style="color:var(--amber)">Share</strong> button, then 
-          <strong style="color:var(--amber)">"Add to Home Screen"</strong>
-          to install RockOn as a standalone app.
-        </p>
-      </div>
-    </div>
-
-  </section>
-
-
-  <!-- Toast notification -->
-  <div class="toast" id="toast" role="alert" aria-live="polite"></div>
-
-</div><!-- #app -->
-
-<script src="./app.js"></script>
+    <script src="./app.js"></script>
 </body>
+
 </html>
