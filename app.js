@@ -14,7 +14,7 @@ const state = {
 };
 
 // ── Gemini model to use ────────────────────────────────
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ── Screen navigation ──────────────────────────────────
 function showScreen(id) {
